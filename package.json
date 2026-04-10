@@ -1,7 +1,7 @@
 {
   "name": "mcp-test",
   "version": "0.1.0",
-  "description": "MCP Test — TRX price + send funds (TronLink MCP delegation or inline private key)",
+  "description": "MCP Test — TRX price + send funds (privateKey in input or TronLink MCP via agent)",
   "type": "module",
   "main": "./dist/index.js",
   "bin": {
