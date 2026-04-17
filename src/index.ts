@@ -2,11 +2,14 @@
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import { buildUnsignedTrxTransfer } from './buildTrxTransaction.js';
 import {
+  buildTrxTransactionInputSchema,
   mcptGetAccountInputSchema,
   mcptGetBalanceInputSchema,
   mcptSignMessageInputSchema,
   mcptSignTransactionInputSchema,
+  resolveBuildTrxTransaction,
   resolveMcptAddress,
   resolveMcptMessage,
   resolveSendToken,
@@ -81,9 +84,10 @@ server.registerTool(
   'mcpt_signTransaction',
   {
     description: [
-      'Ký giao dịch TRON chưa ký: input `unSignedTransaction` (object hoặc chuỗi JSON).',
+      'Chỉ ký giao dịch TRON chưa ký — không broadcast, không gửi raw transaction trong tool này.',
+      'Input: `unSignedTransaction` (object hoặc chuỗi JSON), cùng tên/trị với output `unSignedTransaction` của `mcpt_buildTrxTransaction` (copy object đó vào tham số này).',
       'Client: `await window.tronWeb.trx.sign(unSignedTransaction)`.',
-      'Alias: unsignedTransaction | transaction | unsignTransaction.',
+      'Alias input: unsignedTransaction | transaction | unsignTransaction.',
     ].join('\n'),
     inputSchema: mcptSignTransactionInputSchema,
   },
@@ -105,8 +109,58 @@ server.registerTool(
           },
         ],
         'Đang yêu cầu ký giao dịch qua window.tronWeb.trx.sign(...).',
+        'Chỉ bước ký trên ví; không broadcast trong tool này.',
       ),
     );
+  },
+);
+
+server.registerTool(
+  'mcpt_buildTrxTransaction',
+  {
+    description: [
+      'Tạo giao dịch gửi TRX chưa ký (unsigned) qua TronGrid trên MCP — **không cần private key**.',
+      'Tham số: `from` (địa chỉ owner base58), `to`, `amount` (TRX). Alias from: fromAddress | owner | sender; amount: amountTrx | value.',
+      'Output: trường `unSignedTransaction` — truyền nguyên giá trị đó vào tham số `unSignedTransaction` của `mcpt_signTransaction` (TronLink, `tronWeb.trx.sign`).',
+      'Mạng: env `TL_TRONGRID_URL` / `TRON_FULL_HOST` (mặc định Nile).',
+    ].join('\n'),
+    inputSchema: buildTrxTransactionInputSchema,
+  },
+  async (args) => {
+    const resolved = resolveBuildTrxTransaction(args as Record<string, unknown>);
+    if (!resolved) {
+      return mcptError(
+        'mcpt_buildTrxTransaction: thiếu/sai from, amount hoặc to (xem mô tả tool).',
+      );
+    }
+    if (!isBase58TronAddress(resolved.from)) {
+      return mcptError('mcpt_buildTrxTransaction: from không hợp lệ (base58 T…).');
+    }
+    if (!isBase58TronAddress(resolved.to)) {
+      return mcptError('mcpt_buildTrxTransaction: to không hợp lệ (base58 T…).');
+    }
+    try {
+      const { fullHost, unSignedTransaction } = await buildUnsignedTrxTransfer({
+        fromAddress: resolved.from,
+        toAddress: resolved.to,
+        amountTrx: resolved.amountTrx,
+      });
+      return mcptJsonText({
+        ok: true,
+        mode: 'trongrid',
+        tool: 'mcpt_buildTrxTransaction',
+        fullHost,
+        from: resolved.from,
+        to: resolved.to,
+        amountTrx: resolved.amountTrx,
+        unSignedTransaction,
+        nextStep:
+          'Gọi mcpt_signTransaction trên tab có TronLink với đúng object output: { "unSignedTransaction": <giá trị trường unSignedTransaction ở trên> }.',
+      });
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      return mcptError(`mcpt_buildTrxTransaction: ${msg}`);
+    }
   },
 );
 

@@ -74,7 +74,10 @@ export function resolveUnSignedTransaction(data: Record<string, unknown>): { tra
 
 export const mcptSignTransactionInputSchema = z
   .object({
-    unSignedTransaction: z.any().optional().describe('Object giao dịch chưa ký (từ transactionBuilder)'),
+    unSignedTransaction: z
+      .any()
+      .optional()
+      .describe('Giao dịch chưa ký — object cùng tên/trị với output `unSignedTransaction` của mcpt_buildTrxTransaction'),
     unsignTransaction: z.any().optional().describe('Alias của unSignedTransaction'),
     unsignedTransaction: z.any().optional(),
     transaction: z.any().optional(),
@@ -85,7 +88,7 @@ export const mcptSignTransactionInputSchema = z
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       message:
-        'Cần unSignedTransaction (object hoặc chuỗi JSON) — giao dịch TRON chưa ký để tronWeb.trx.sign(...).',
+        'Cần unSignedTransaction (object hoặc chuỗi JSON) — payload chưa ký cho tronWeb.trx.sign (ví dụ từ mcpt_buildTrxTransaction).',
     });
   });
 
@@ -164,6 +167,45 @@ export const sendTrxInputSchema = z
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       message: 'Cần amount > 0 (amount | amountTrx | value) và to (to | toAddress | recipient | …).',
+    });
+  });
+
+// --- mcpt_buildTrxTransaction (MCP + TronGrid: unsigned TRX transfer) ---
+
+export function resolveBuildTrxTransaction(
+  data: Record<string, unknown>,
+): { from: string; to: string; amountTrx: number } | undefined {
+  const base = resolveSendTrx(data);
+  if (!base) return undefined;
+  const fromRaw = data.from ?? data.fromAddress ?? data.owner ?? data.sender;
+  let from = '';
+  if (typeof fromRaw === 'string') from = fromRaw.trim();
+  else if (typeof fromRaw === 'number' && Number.isFinite(fromRaw)) from = String(fromRaw);
+  if (!from) return undefined;
+  return { from, to: base.to, amountTrx: base.amountTrx };
+}
+
+export const buildTrxTransactionInputSchema = z
+  .object({
+    from: z.string().optional().describe('Địa chỉ gửi (owner) base58'),
+    fromAddress: z.string().optional(),
+    owner: z.string().optional(),
+    sender: z.string().optional(),
+    amount: z.coerce.number().optional().describe('Số TRX (đơn vị TRX)'),
+    amountTrx: z.coerce.number().optional(),
+    value: z.coerce.number().optional(),
+    to: z.string().optional().describe('Địa chỉ nhận base58'),
+    toAddress: z.string().optional(),
+    recipient: z.string().optional(),
+    destination: z.string().optional(),
+  })
+  .passthrough()
+  .superRefine((data, ctx) => {
+    if (resolveBuildTrxTransaction(data as Record<string, unknown>)) return;
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message:
+        'Cần from (from | fromAddress | owner | sender), amount > 0 (amount | amountTrx | value), và to (to | toAddress | …).',
     });
   });
 
