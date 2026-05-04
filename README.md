@@ -1,11 +1,17 @@
 # MCP Test
 
-MCP server (stdio) với hai tool:
+MCP server (stdio) phục vụ tương tác ví TRON (TronLink) và thao tác giao dịch.
+
+### Các tool chính
 
 | Tool | Mô tả |
 |------|--------|
-| `get_trx_price` | Giá TRX hiện tại (USD), nguồn CoinGecko. |
-| `send_funds` | Gửi TRX từ mcp-test khi có `privateKey`; không có key thì có thể dùng tool TronLink nếu phiên có MCP đó (agent tự quyết). |
+| `tron_getBalance` / `tron_getAccount` | Đọc on-chain qua full node/TronGrid (không cần ví) |
+| `tron_getAddress` / `tron_requestAccounts` / `tron_isReady` | Delegate lấy địa chỉ và kiểm tra TronLink (chạy trong browser) |
+| `tron_sendTrx` / `tron_sendToken` | Gửi trực tiếp qua TronLink (client-side broadcast) |
+| `tron_buildTrxTransferUnsigned` / `tron_buildTrc10TransferUnsigned` / `tron_buildContractCallUnsigned` | Build giao dịch unsigned (server-side) |
+| `tron_signTransaction` | Delegate ký giao dịch unsigned qua TronLink |
+| `tron_broadcastTransaction` | Broadcast giao dịch đã ký (server-side) |
 
 ## Cài đặt
 
@@ -28,14 +34,13 @@ npm run build
 }
 ```
 
-Tuỳ chọn: `TL_TRONGRID_URL` trong `env` nếu cần đổi full node (mặc định Nile).
+Tuỳ chọn: `TL_TRONGRID_URL` / `TRON_FULL_HOST` trong `env` nếu cần đổi full node (mặc định Nile).
 
-**Agent:** có `privateKey` → gửi qua `send_funds`; không có → có thể gửi bằng tool TronLink nếu có trong phiên.
+### Luồng build → sign → broadcast
 
-### Logic `send_funds` (server)
-
-1. Có `privateKey` → broadcast từ mcp-test.
-2. Không có → không broadcast; phản hồi `walletStatus: need_tronlink` (gợi ý dùng TronLink nếu có).
+1. `tron_build...Unsigned` (unsigned)
+2. `tron_signTransaction` (TronLink ký)
+3. `tron_broadcastTransaction` (server broadcast)
 
 ## License
 

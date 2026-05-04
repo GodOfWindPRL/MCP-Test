@@ -4,7 +4,8 @@ import { resolveFullHost } from './env.js';
 export interface BuildTrxTransactionInput {
   fromAddress: string;
   toAddress: string;
-  amountTrx: number;
+  /** Amount in sun (integer digits string) to avoid float rounding */
+  amountSun: string;
 }
 
 export interface BuildTrxTransactionResult {
@@ -29,14 +30,17 @@ export async function buildUnsignedTrxTransfer(input: BuildTrxTransactionInput):
     throw new Error('Invalid TRON recipient address (to, base58 T…).');
   }
 
-  const trx = input.amountTrx;
-  if (!Number.isFinite(trx) || trx <= 0) {
-    throw new Error('amount must be a positive number (TRX).');
+  const sun = input.amountSun.trim();
+  if (!/^\d+$/.test(sun)) {
+    throw new Error('amountSun must be a positive integer string (sun).');
+  }
+  if (sun === '0') {
+    throw new Error('amountSun must be > 0.');
   }
 
-  const sunRaw = tw.toSun(trx);
-  const sunNum = typeof sunRaw === 'number' ? sunRaw : Number(sunRaw);
-  const built = await tw.transactionBuilder.sendTrx(to, sunNum, from);
+  // TronWeb runtime accepts amount as string (it will parseInt internally).
+  // The TS type for sendTrx is stricter, so we cast to avoid float rounding via number.
+  const built = await (tw.transactionBuilder as any).sendTrx(to, sun, from);
   const expirationMs = (built as { raw_data: { expiration: number } }).raw_data.expiration;
   const targetExpirationMs = Date.now() + 10 * 60 * 1000;
   const extensionSeconds = Math.ceil((targetExpirationMs - expirationMs) / 1000);

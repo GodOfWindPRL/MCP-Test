@@ -26,7 +26,7 @@ export const browserTronWalletInputSchema = z
     preset: z
       .enum(['address', 'address_balance', 'ready', 'current_block', 'custom'])
       .describe(
-        'address=chỉ địa chỉ ví; address_balance=chỉ địa chỉ (số dư lấy bằng mcpt_getBalance sau khi có address); ready=tronWeb.ready; current_block=block — ưu tiên gọi mcpt_getCurrentBlock (TronGrid); custom=dùng actions',
+        'address=chỉ địa chỉ ví; address_balance=chỉ địa chỉ (số dư lấy bằng tron_getBalance sau khi có address); ready=tronWeb.ready; current_block=block — ưu tiên gọi tron_getCurrentBlock (TronGrid); custom=dùng actions',
       ),
     actions: z.array(singleActionSchema).optional().describe('Bắt buộc khi preset=custom'),
   })

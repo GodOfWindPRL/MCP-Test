@@ -24,7 +24,105 @@ export const mcptWalletActionSchema = z.object({
 
 export type McptWalletAction = z.infer<typeof mcptWalletActionSchema>;
 
-// --- mcpt_signMessage ---
+// ------------------------------
+// Shared numeric parsing helpers
+// ------------------------------
+
+const TRX_DECIMALS = 6;
+
+function trimToString(v: unknown): string | undefined {
+  if (v === undefined || v === null) return undefined;
+  if (typeof v === 'string') {
+    const s = v.trim();
+    return s ? s : undefined;
+  }
+  if (typeof v === 'number') {
+    if (!Number.isFinite(v)) return undefined;
+    // Avoid scientific notation that would break strict decimal parsing.
+    const s = String(v);
+    if (s.includes('e') || s.includes('E')) return undefined;
+    return s.trim() || undefined;
+  }
+  const s = String(v).trim();
+  return s ? s : undefined;
+}
+
+/** Parse positive integer string (no decimals) -> canonical digits string. */
+function parsePositiveIntString(v: unknown): string | undefined {
+  const s = trimToString(v);
+  if (!s) return undefined;
+  if (!/^\d+$/.test(s)) return undefined;
+  const withoutLeadingZeros = s.replace(/^0+/, '') || '0';
+  if (withoutLeadingZeros === '0') return undefined;
+  return withoutLeadingZeros;
+}
+
+/** Parse human TRX (decimal string up to 6 decimals) -> sun (integer digits string). */
+function parseTrxHumanToSun(v: unknown, decimals = TRX_DECIMALS): string | undefined {
+  const s = trimToString(v);
+  if (!s) return undefined;
+  if (!/^\d+(\.\d+)?$/.test(s)) return undefined;
+
+  const [intPartRaw, fracPartRaw = ''] = s.split('.');
+  const intPart = intPartRaw.replace(/^0+/, '') || '0';
+  if (intPart === '0' && fracPartRaw === '') return undefined;
+  if (decimals < 0) return undefined;
+
+  if (fracPartRaw.length > decimals) return undefined; // reject fractional precision overflow
+  const fracPadded = fracPartRaw.padEnd(decimals, '0');
+
+  const intBig = BigInt(intPart);
+  const fracBig = fracPadded ? BigInt(fracPadded) : 0n;
+  const sun = intBig * 10n ** BigInt(decimals) + fracBig;
+  if (sun <= 0n) return undefined;
+  return sun.toString();
+}
+
+/** Format sun digits string -> human decimal string (up to 6 decimals). */
+function formatSunToTrx(sun: string, decimals = TRX_DECIMALS): string {
+  const sunStr = sun.replace(/^0+/, '') || '0';
+  if (sunStr === '0') return '0';
+  const padded = sunStr.padStart(decimals + 1, '0');
+  const intPart = padded.slice(0, padded.length - decimals);
+  const fracPart = padded.slice(padded.length - decimals).replace(/0+$/, '');
+  return fracPart ? `${intPart}.${fracPart}` : intPart;
+}
+
+function parseTokenDecimals(v: unknown): number | undefined {
+  const s = trimToString(v);
+  if (!s) return undefined;
+  const n = typeof v === 'number' ? v : Number(s);
+  if (!Number.isFinite(n)) return undefined;
+  // decimals must be integer
+  if (!Number.isInteger(n)) return undefined;
+  if (n < 0 || n > 36) return undefined;
+  return n;
+}
+
+/**
+ * Validate token human amount string is positive and uses <= `decimals` fractional digits.
+ * Returns normalized human string (trim trailing zeros in fraction).
+ */
+function parseTokenHumanAmount(v: unknown, decimals: number): string | undefined {
+  const s = trimToString(v);
+  if (!s) return undefined;
+  if (!/^\d+(\.\d+)?$/.test(s)) return undefined;
+
+  const [intPartRaw, fracPartRaw = ''] = s.split('.');
+  if (fracPartRaw.length > decimals) return undefined;
+
+  const intPart = intPartRaw.replace(/^0+/, '') || '0';
+  const fracPartPadded = fracPartRaw.padEnd(decimals, '0');
+
+  const scaled =
+    BigInt(intPart) * 10n ** BigInt(decimals) + (fracPartPadded ? BigInt(fracPartPadded) : 0n);
+  if (scaled <= 0n) return undefined;
+
+  const fracTrim = fracPartRaw.replace(/0+$/, '');
+  return fracTrim ? `${intPart}.${fracTrim}` : intPart;
+}
+
+// --- tron_signMessage ---
 
 export function resolveMcptMessage(data: Record<string, unknown>): { message: string } | undefined {
   const raw = data.message ?? data.msg ?? data.text ?? data.payload;
@@ -50,7 +148,7 @@ export const mcptSignMessageInputSchema = z
     });
   });
 
-// --- mcpt_signTransaction ---
+// --- tron_signTransaction ---
 
 export function resolveUnSignedTransaction(data: Record<string, unknown>): { transaction: unknown } | undefined {
   const raw =
@@ -77,7 +175,9 @@ export const mcptSignTransactionInputSchema = z
     unSignedTransaction: z
       .any()
       .optional()
-      .describe('Giao dịch chưa ký — object cùng tên/trị với output `unSignedTransaction` của mcpt_buildTrxTransaction'),
+      .describe(
+        'Giao dịch chưa ký — object cùng tên/trị với output `unSignedTransaction` của tron_buildTrxTransferUnsigned',
+      ),
     unsignTransaction: z.any().optional().describe('Alias của unSignedTransaction'),
     unsignedTransaction: z.any().optional(),
     transaction: z.any().optional(),
@@ -88,11 +188,11 @@ export const mcptSignTransactionInputSchema = z
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       message:
-        'Cần unSignedTransaction (object hoặc chuỗi JSON) — payload chưa ký cho tronWeb.trx.sign (ví dụ từ mcpt_buildTrxTransaction).',
+        'Cần unSignedTransaction (object hoặc chuỗi JSON) — payload chưa ký cho tronWeb.trx.sign (ví dụ từ tron_buildTrxTransferUnsigned).',
     });
   });
 
-// --- mcpt_getBalance / mcpt_getAccount: bắt buộc address — đọc TronGrid trên MCP, không delegate ---
+// --- tron_getBalance / tron_getAccount: bắt buộc address — đọc TronGrid trên MCP, không delegate ---
 
 export function resolveMcptAddress(data: Record<string, unknown>): string | undefined {
   const raw = data.address ?? data.addr;
@@ -112,7 +212,7 @@ export const mcptGetBalanceInputSchema = z
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       message:
-        'Bắt buộc `address` (base58). MCP đọc số dư qua TronGrid — không qua TronLink. Nếu chưa có địa chỉ, lấy từ `mcpt_getAddress` trên app rồi gọi lại.',
+        'Bắt buộc `address` (base58). MCP đọc số dư qua TronGrid — không qua TronLink. Nếu chưa có địa chỉ, lấy từ `tron_getAddress` trên app rồi gọi lại.',
     });
   });
 
@@ -127,35 +227,43 @@ export const mcptGetAccountInputSchema = z
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       message:
-        'Bắt buộc `address` (base58). MCP đọc account qua TronGrid — không qua TronLink. Chưa có địa chỉ → `mcpt_getAddress` trên app trước.',
+        'Bắt buộc `address` (base58). MCP đọc account qua TronGrid — không qua TronLink. Chưa có địa chỉ → `tron_getAddress` trên app trước.',
     });
   });
 
-// --- send_trx / send_token (delegate → window.tronWeb.transactionBuilder + sign + broadcast) ---
+// --- tron_sendTrx / tron_sendToken (delegate → window.tronWeb.transactionBuilder + sign + broadcast) ---
 
-export function resolveSendTrx(data: Record<string, unknown>): { to: string; amountTrx: number } | undefined {
+export function resolveSendTrx(
+  data: Record<string, unknown>,
+): { to: string; amountSun: string; amountTrxHuman: string; amountTrx?: number } | undefined {
   const toRaw = data.to ?? data.toAddress ?? data.recipient ?? data.destination;
+  const amountSunRaw = data.amountSun ?? data.amount_sun ?? data.valueSun ?? data.value_sun;
   const amountRaw = data.amount ?? data.amountTrx ?? data.value;
 
   let to = '';
   if (typeof toRaw === 'string') to = toRaw.trim();
   else if (typeof toRaw === 'number' && Number.isFinite(toRaw)) to = String(toRaw);
 
-  let amountTrx: number | undefined;
-  if (amountRaw !== undefined && amountRaw !== null && amountRaw !== '') {
-    const n = typeof amountRaw === 'number' ? amountRaw : Number(String(amountRaw).trim());
-    if (Number.isFinite(n) && n > 0) amountTrx = n;
-  }
+  const amountSun =
+    amountSunRaw !== undefined && amountSunRaw !== null && amountSunRaw !== ''
+      ? parsePositiveIntString(amountSunRaw)
+      : parseTrxHumanToSun(amountRaw);
 
-  if (!to || amountTrx === undefined) return undefined;
-  return { to, amountTrx };
+  if (!to || !amountSun) return undefined;
+
+  const amountTrxHuman = formatSunToTrx(amountSun);
+  const amountTrx = Number.isFinite(Number(amountTrxHuman)) ? Number(amountTrxHuman) : undefined;
+
+  return { to, amountSun, amountTrxHuman, amountTrx };
 }
 
 export const sendTrxInputSchema = z
   .object({
-    amount: z.coerce.number().optional().describe('Số TRX gửi (đơn vị TRX)'),
-    amountTrx: z.coerce.number().optional(),
-    value: z.coerce.number().optional(),
+    amount: z.union([z.string(), z.number()]).optional().describe('Số TRX gửi (đơn vị TRX, dạng decimal)'),
+    amountTrx: z.union([z.string(), z.number()]).optional(),
+    value: z.union([z.string(), z.number()]).optional(),
+    amountSun: z.union([z.string(), z.number()]).optional().describe('Số TRX gửi (đơn vị sun, integer)'),
+    amount_sun: z.union([z.string(), z.number()]).optional(),
     to: z.string().optional().describe('Địa chỉ nhận base58'),
     toAddress: z.string().optional(),
     recipient: z.string().optional(),
@@ -170,11 +278,11 @@ export const sendTrxInputSchema = z
     });
   });
 
-// --- mcpt_buildTrxTransaction (MCP + TronGrid: unsigned TRX transfer) ---
+// --- tron_buildTrxTransferUnsigned (MCP + TronGrid: unsigned TRX transfer) ---
 
 export function resolveBuildTrxTransaction(
   data: Record<string, unknown>,
-): { from: string; to: string; amountTrx: number } | undefined {
+): { from: string; to: string; amountSun: string; amountTrxHuman: string; amountTrx?: number } | undefined {
   const base = resolveSendTrx(data);
   if (!base) return undefined;
   const fromRaw = data.from ?? data.fromAddress ?? data.owner ?? data.sender;
@@ -182,7 +290,7 @@ export function resolveBuildTrxTransaction(
   if (typeof fromRaw === 'string') from = fromRaw.trim();
   else if (typeof fromRaw === 'number' && Number.isFinite(fromRaw)) from = String(fromRaw);
   if (!from) return undefined;
-  return { from, to: base.to, amountTrx: base.amountTrx };
+  return { from, to: base.to, amountSun: base.amountSun, amountTrxHuman: base.amountTrxHuman, amountTrx: base.amountTrx };
 }
 
 export const buildTrxTransactionInputSchema = z
@@ -191,9 +299,11 @@ export const buildTrxTransactionInputSchema = z
     fromAddress: z.string().optional(),
     owner: z.string().optional(),
     sender: z.string().optional(),
-    amount: z.coerce.number().optional().describe('Số TRX (đơn vị TRX)'),
-    amountTrx: z.coerce.number().optional(),
-    value: z.coerce.number().optional(),
+    amount: z.union([z.string(), z.number()]).optional().describe('Số TRX (đơn vị TRX, dạng decimal)'),
+    amountTrx: z.union([z.string(), z.number()]).optional(),
+    value: z.union([z.string(), z.number()]).optional(),
+    amountSun: z.union([z.string(), z.number()]).optional().describe('Số TRX (đơn vị sun, integer)'),
+    amount_sun: z.union([z.string(), z.number()]).optional(),
     to: z.string().optional().describe('Địa chỉ nhận base58'),
     toAddress: z.string().optional(),
     recipient: z.string().optional(),
@@ -231,22 +341,12 @@ export function resolveSendToken(data: Record<string, unknown>):
   let contractAddress = '';
   if (typeof contractRaw === 'string') contractAddress = contractRaw.trim();
 
-  let amountStr = '';
-  if (amountRaw !== undefined && amountRaw !== null && amountRaw !== '') {
-    if (typeof amountRaw === 'number' && Number.isFinite(amountRaw)) amountStr = String(amountRaw);
-    else amountStr = String(amountRaw).trim();
-  }
+  const decimals = decRaw !== undefined && decRaw !== null && decRaw !== '' ? parseTokenDecimals(decRaw) : undefined;
+  if (decimals === undefined) return undefined;
 
-  let decimals = 6;
-  if (decRaw !== undefined && decRaw !== null && decRaw !== '') {
-    const d = typeof decRaw === 'number' ? decRaw : Number(String(decRaw).trim());
-    if (Number.isFinite(d) && d >= 0 && d <= 36) decimals = Math.floor(d);
-    else return undefined;
-  }
-
-  const amtNum = Number(amountStr);
-  if (!to || !contractAddress || !amountStr || !Number.isFinite(amtNum) || amtNum <= 0) return undefined;
-  return { to, contractAddress, amount: amountStr, decimals };
+  const amountNormalized = parseTokenHumanAmount(amountRaw, decimals);
+  if (!to || !contractAddress || !amountNormalized) return undefined;
+  return { to, contractAddress, amount: amountNormalized, decimals };
 }
 
 export const sendTokenInputSchema = z
@@ -259,8 +359,8 @@ export const sendTokenInputSchema = z
     tokenContract: z.string().optional(),
     amount: z.union([z.string(), z.number()]).optional().describe('Số lượng token (human, không phải sun)'),
     value: z.union([z.string(), z.number()]).optional(),
-    decimals: z.coerce.number().optional().describe('Decimals TRC20 (mặc định 6, ví dụ USDT)'),
-    tokenDecimals: z.coerce.number().optional(),
+    decimals: z.union([z.string(), z.number()]).optional().describe('Decimals TRC20 (bắt buộc, 0–36)'),
+    tokenDecimals: z.union([z.string(), z.number()]).optional(),
   })
   .passthrough()
   .superRefine((data, ctx) => {
@@ -268,6 +368,6 @@ export const sendTokenInputSchema = z
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       message:
-        'Cần to, contractAddress (tokenAddress | …), amount > 0, và decimals hợp lệ (0–36, mặc định 6).',
+        'Cần to, contractAddress (tokenAddress | …), amount > 0 (chuỗi decimal), và decimals hợp lệ (0–36, bắt buộc).',
     });
   });

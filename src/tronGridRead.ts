@@ -2,6 +2,7 @@
  * Đọc on-chain qua TronGrid / full node HTTP — không cần window.tronWeb.
  * Dùng env: TL_TRONGRID_URL | TRON_FULL_HOST | … (xem env.ts).
  */
+import { TronWeb } from 'tronweb';
 import { resolveFullHost } from './env.js';
 
 function baseUrl(): string {
@@ -42,5 +43,20 @@ export async function tronGridGetNowBlock(): Promise<unknown> {
 }
 
 export function isBase58TronAddress(s: string): boolean {
-  return typeof s === 'string' && s.startsWith('T') && s.length >= 30;
+  if (typeof s !== 'string') return false;
+  const addr = s.trim();
+  if (!addr) return false;
+  // Reject hex inputs explicitly (tool expects base58/TRON address)
+  if (addr.startsWith('0x')) return false;
+
+  try {
+    const anyTW = TronWeb as unknown as { address?: { isAddress?: (a: string) => boolean } };
+    const isAddrFn = anyTW?.address?.isAddress;
+    if (typeof isAddrFn === 'function') return isAddrFn(addr) === true;
+  } catch {
+    // fallthrough to legacy heuristic
+  }
+
+  // Fallback heuristic (should rarely be used)
+  return addr.startsWith('T') && addr.length >= 30;
 }
