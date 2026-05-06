@@ -5,20 +5,20 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { buildUnsignedTrxTransfer } from './buildTrxTransaction.js';
 import {
   buildTrxTransactionInputSchema,
-  mcptGetAccountInputSchema,
-  mcptGetBalanceInputSchema,
-  mcptSignMessageInputSchema,
-  mcptSignTransactionInputSchema,
+  resolveAddressInput,
   resolveBuildTrxTransaction,
-  resolveMcptAddress,
-  resolveMcptMessage,
   resolveSendToken,
   resolveSendTrx,
+  resolveSignMessageInput,
   resolveUnSignedTransaction,
   sendTokenInputSchema,
   sendTrxInputSchema,
-} from './mcptSchemas.js';
-import { mcptDelegate, mcptError, mcptJsonText } from './mcptResponse.js';
+  tronGetAccountInputSchema,
+  tronGetBalanceInputSchema,
+  tronSignMessageInputSchema,
+  tronSignTransactionInputSchema,
+} from './tronWalletSchemas.js';
+import { delegateBrowserWallet, toolError, toolJsonText } from './tronToolResponse.js';
 import {
   extractBalanceSun,
   isBase58TronAddress,
@@ -47,15 +47,15 @@ server.registerTool(
       'Client (app) ưu tiên `tronWeb.trx.signMessageV2(message)` với chuỗi UTF-8; chỉ fallback `signMessage` (legacy, thường hex) nếu không có V2.',
       'MCP không có window.tronWeb; trả `clientWalletActions` (type signMessage) để frontend gọi đúng API trên ví.',
     ].join('\n'),
-    inputSchema: mcptSignMessageInputSchema,
+    inputSchema: tronSignMessageInputSchema,
   },
   async (args) => {
-    const resolved = resolveMcptMessage(args as Record<string, unknown>);
+    const resolved = resolveSignMessageInput(args as Record<string, unknown>);
     if (!resolved) {
-      return mcptError('tron_signMessage: thiếu message (message | msg | text | payload).');
+      return toolError('tron_signMessage: thiếu message (message | msg | text | payload).');
     }
-    return mcptJsonText(
-      mcptDelegate(
+    return toolJsonText(
+      delegateBrowserWallet(
         'tron_signMessage',
         [{ id: 'sm1', type: 'signMessage', params: { message: resolved.message } }],
         'Đang yêu cầu ký message qua TronLink — ưu tiên trx.signMessageV2 (UTF-8), không mô tả là signMessage legacy trừ khi fallback.',
@@ -70,15 +70,15 @@ server.registerTool(
   'tron_sign',
   {
     description: 'Alias của tron_signMessage — ký message TRON qua TronLink; client ưu tiên signMessageV2.',
-    inputSchema: mcptSignMessageInputSchema,
+    inputSchema: tronSignMessageInputSchema,
   },
   async (args) => {
-    const resolved = resolveMcptMessage(args as Record<string, unknown>);
+    const resolved = resolveSignMessageInput(args as Record<string, unknown>);
     if (!resolved) {
-      return mcptError('tron_sign: thiếu message (message | msg | text | payload).');
+      return toolError('tron_sign: thiếu message (message | msg | text | payload).');
     }
-    return mcptJsonText(
-      mcptDelegate(
+    return toolJsonText(
+      delegateBrowserWallet(
         'tron_sign',
         [{ id: 'sm1', type: 'signMessage', params: { message: resolved.message } }],
         'Đang yêu cầu ký message qua TronLink — ưu tiên trx.signMessageV2 (UTF-8), không mô tả là signMessage legacy trừ khi fallback.',
@@ -97,17 +97,17 @@ server.registerTool(
       'Client: `await window.tronWeb.trx.sign(unSignedTransaction)`.',
       'Alias input: unsignedTransaction | transaction | unsignTransaction.',
     ].join('\n'),
-    inputSchema: mcptSignTransactionInputSchema,
+    inputSchema: tronSignTransactionInputSchema,
   },
   async (args) => {
     const resolved = resolveUnSignedTransaction(args as Record<string, unknown>);
     if (!resolved) {
-      return mcptError(
+      return toolError(
         'tron_signTransaction: thiếu hoặc không parse được unSignedTransaction (object hoặc JSON string).',
       );
     }
-    return mcptJsonText(
-      mcptDelegate(
+    return toolJsonText(
+      delegateBrowserWallet(
         'tron_signTransaction',
         [
           {
@@ -136,7 +136,7 @@ server.registerTool(
   async (args) => {
     try {
       const out = await broadcastSignedTransaction(args as any);
-      return mcptJsonText({
+      return toolJsonText({
         ok: true,
         mode: 'broadcast',
         tool: 'tron_broadcastTransaction',
@@ -146,7 +146,7 @@ server.registerTool(
       });
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
-      return mcptError(`tron_broadcastTransaction: ${msg}`);
+      return toolError(`tron_broadcastTransaction: ${msg}`);
     }
   },
 );
@@ -164,7 +164,7 @@ server.registerTool(
   async (args) => {
     try {
       const out = await buildTrc10TransferUnsigned(args as any);
-      return mcptJsonText({
+      return toolJsonText({
         ok: true,
         mode: 'trongrid',
         tool: 'tron_buildTrc10TransferUnsigned',
@@ -174,7 +174,7 @@ server.registerTool(
       });
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
-      return mcptError(`tron_buildTrc10TransferUnsigned: ${msg}`);
+      return toolError(`tron_buildTrc10TransferUnsigned: ${msg}`);
     }
   },
 );
@@ -192,7 +192,7 @@ server.registerTool(
   async (args) => {
     try {
       const out = await buildContractCallUnsigned(args as any);
-      return mcptJsonText({
+      return toolJsonText({
         ok: true,
         mode: 'trongrid',
         tool: 'tron_buildContractCallUnsigned',
@@ -202,7 +202,7 @@ server.registerTool(
       });
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
-      return mcptError(`tron_buildContractCallUnsigned: ${msg}`);
+      return toolError(`tron_buildContractCallUnsigned: ${msg}`);
     }
   },
 );
@@ -221,15 +221,15 @@ server.registerTool(
   async (args) => {
     const resolved = resolveBuildTrxTransaction(args as Record<string, unknown>);
     if (!resolved) {
-      return mcptError(
+      return toolError(
         'tron_buildTrxTransferUnsigned: thiếu/sai from, amount hoặc to (xem mô tả tool).',
       );
     }
     if (!isBase58TronAddress(resolved.from)) {
-      return mcptError('tron_buildTrxTransferUnsigned: from không hợp lệ (base58 T…).');
+      return toolError('tron_buildTrxTransferUnsigned: from không hợp lệ (base58 T…).');
     }
     if (!isBase58TronAddress(resolved.to)) {
-      return mcptError('tron_buildTrxTransferUnsigned: to không hợp lệ (base58 T…).');
+      return toolError('tron_buildTrxTransferUnsigned: to không hợp lệ (base58 T…).');
     }
     try {
       const { fullHost, unSignedTransaction } = await buildUnsignedTrxTransfer({
@@ -237,7 +237,7 @@ server.registerTool(
         toAddress: resolved.to,
         amountSun: resolved.amountSun,
       });
-      return mcptJsonText({
+      return toolJsonText({
         ok: true,
         mode: 'trongrid',
         tool: 'tron_buildTrxTransferUnsigned',
@@ -252,7 +252,7 @@ server.registerTool(
       });
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
-      return mcptError(`tron_buildTrxTransferUnsigned: ${msg}`);
+      return toolError(`tron_buildTrxTransferUnsigned: ${msg}`);
     }
   },
 );
@@ -266,8 +266,8 @@ server.registerTool(
     ].join('\n'),
   },
   async () => {
-    return mcptJsonText(
-      mcptDelegate(
+    return toolJsonText(
+      delegateBrowserWallet(
         'tron_getAddress',
         [{ id: 'ga1', type: 'getDefaultAddress' }],
         'Đọc defaultAddress trên TronLink (frontend).',
@@ -283,24 +283,24 @@ server.registerTool(
       'Số dư TRX on-chain qua TronGrid trên MCP — **bắt buộc `address`** (base58).',
       'Không dùng TronLink; không “chờ client” nếu đã truyền đúng địa chỉ. Mạng: env `TL_TRONGRID_URL` / `TRON_FULL_HOST` (mặc định Nile).',
     ].join('\n'),
-    inputSchema: mcptGetBalanceInputSchema,
+    inputSchema: tronGetBalanceInputSchema,
   },
   async (args) => {
-    const address = resolveMcptAddress(args as Record<string, unknown>);
+    const address = resolveAddressInput(args as Record<string, unknown>);
     if (!address) {
-      return mcptError(
+      return toolError(
         'tron_getBalance: thiếu address. Đây là đọc chain qua MCP (TronGrid), không liên quan TronLink — truyền địa chỉ đã biết hoặc lấy bằng tron_getAddress trên app trước.',
       );
     }
     if (!isBase58TronAddress(address)) {
-      return mcptError('tron_getBalance: address không giống địa chỉ TRON base58 (bắt đầu T, đủ dài).');
+      return toolError('tron_getBalance: address không giống địa chỉ TRON base58 (bắt đầu T, đủ dài).');
     }
     try {
       const json = await tronGridFetchAccount(address);
       const balanceSun = extractBalanceSun(json);
       const sunNum = Number(balanceSun);
       const balanceTrx = Number.isFinite(sunNum) ? sunNum / 1_000_000 : null;
-      return mcptJsonText({
+      return toolJsonText({
         ok: true,
         mode: 'trongrid',
         tool: 'tron_getBalance',
@@ -310,7 +310,7 @@ server.registerTool(
       });
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
-      return mcptError(`tron_getBalance: ${msg}`);
+      return toolError(`tron_getBalance: ${msg}`);
     }
   },
 );
@@ -324,8 +324,8 @@ server.registerTool(
     ].join('\n'),
   },
   async () => {
-    return mcptJsonText(
-      mcptDelegate(
+    return toolJsonText(
+      delegateBrowserWallet(
         'tron_isReady',
         [{ id: 'ir1', type: 'isReady' }],
         'Đang kiểm tra window.tronWeb / TronLink ready.',
@@ -344,10 +344,10 @@ server.registerTool(
   async () => {
     try {
       const block = await tronGridGetNowBlock();
-      return mcptJsonText({ ok: true, mode: 'trongrid', tool: 'tron_getCurrentBlock', block });
+      return toolJsonText({ ok: true, mode: 'trongrid', tool: 'tron_getCurrentBlock', block });
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
-      return mcptError(`tron_getCurrentBlock: ${msg}`);
+      return toolError(`tron_getCurrentBlock: ${msg}`);
     }
   },
 );
@@ -359,21 +359,21 @@ server.registerTool(
       'Account TRON qua TronGrid trên MCP — **bắt buộc `address`** (base58).',
       'Không dùng TronLink. Mạng theo env TronGrid (mặc định Nile).',
     ].join('\n'),
-    inputSchema: mcptGetAccountInputSchema,
+    inputSchema: tronGetAccountInputSchema,
   },
   async (args) => {
-    const address = resolveMcptAddress(args as Record<string, unknown>);
+    const address = resolveAddressInput(args as Record<string, unknown>);
     if (!address) {
-      return mcptError(
+      return toolError(
         'tron_getAccount: thiếu address. Đọc on-chain qua MCP — truyền địa chỉ hoặc dùng tron_getAddress trên app trước.',
       );
     }
     if (!isBase58TronAddress(address)) {
-      return mcptError('tron_getAccount: address không hợp lệ.');
+      return toolError('tron_getAccount: address không hợp lệ.');
     }
     try {
       const account = await tronGridFetchAccount(address);
-      return mcptJsonText({
+      return toolJsonText({
         ok: true,
         mode: 'trongrid',
         tool: 'tron_getAccount',
@@ -382,7 +382,7 @@ server.registerTool(
       });
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
-      return mcptError(`tron_getAccount: ${msg}`);
+      return toolError(`tron_getAccount: ${msg}`);
     }
   },
 );
@@ -396,8 +396,8 @@ server.registerTool(
     ].join('\n'),
   },
   async () => {
-    return mcptJsonText(
-      mcptDelegate(
+    return toolJsonText(
+      delegateBrowserWallet(
         'tron_requestAccounts',
         [{ id: 'ra1', type: 'requestAccounts' }],
         'Đang yêu cầu kết nối ví TronLink (connect site).',
@@ -419,12 +419,12 @@ server.registerTool(
   async (args) => {
     const resolved = resolveSendTrx(args as Record<string, unknown>);
     if (!resolved) {
-      return mcptError('tron_sendTrx: thiếu/sai amount hoặc to (xem mô tả tool).');
+      return toolError('tron_sendTrx: thiếu/sai amount hoặc to (xem mô tả tool).');
     }
     const amountTrxForClient =
       resolved.amountTrx ?? Number(resolved.amountTrxHuman) ?? undefined;
-    return mcptJsonText(
-      mcptDelegate(
+    return toolJsonText(
+      delegateBrowserWallet(
         'tron_sendTrx',
         [
           {
@@ -460,12 +460,12 @@ server.registerTool(
   async (args) => {
     const resolved = resolveSendToken(args as Record<string, unknown>);
     if (!resolved) {
-      return mcptError(
+      return toolError(
         'tron_sendToken: thiếu/sai to, contractAddress, amount hoặc decimals (xem mô tả tool).',
       );
     }
-    return mcptJsonText(
-      mcptDelegate(
+    return toolJsonText(
+      delegateBrowserWallet(
         'tron_sendToken',
         [
           {

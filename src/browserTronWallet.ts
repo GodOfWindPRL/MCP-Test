@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 /** Đồng bộ với backend/utils/tronWalletRelay.js ALLOWED_ACTION_TYPES */
-/** Giữ đồng bộ với `mcptSchemas.mcptWalletActionTypeSchema` / relay frontend. */
+/** Giữ đồng bộ với `tronWalletSchemas.tronWalletActionTypeSchema` / relay frontend. */
 const actionTypeSchema = z.enum([
   'isReady',
   'getDefaultAddress',

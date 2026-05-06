@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 /** Đồng bộ với frontend relay: chỉ các action được phép. */
-export const mcptWalletActionTypeSchema = z.enum([
+export const tronWalletActionTypeSchema = z.enum([
   'isReady',
   'getDefaultAddress',
   'getBalance',
@@ -14,15 +14,15 @@ export const mcptWalletActionTypeSchema = z.enum([
   'sendToken',
 ]);
 
-export type McptWalletActionType = z.infer<typeof mcptWalletActionTypeSchema>;
+export type TronWalletActionType = z.infer<typeof tronWalletActionTypeSchema>;
 
-export const mcptWalletActionSchema = z.object({
+export const tronWalletActionSchema = z.object({
   id: z.string().min(1),
-  type: mcptWalletActionTypeSchema,
+  type: tronWalletActionTypeSchema,
   params: z.record(z.string(), z.any()).optional(),
 });
 
-export type McptWalletAction = z.infer<typeof mcptWalletActionSchema>;
+export type TronWalletAction = z.infer<typeof tronWalletActionSchema>;
 
 // ------------------------------
 // Shared numeric parsing helpers
@@ -124,7 +124,7 @@ function parseTokenHumanAmount(v: unknown, decimals: number): string | undefined
 
 // --- tron_signMessage ---
 
-export function resolveMcptMessage(data: Record<string, unknown>): { message: string } | undefined {
+export function resolveSignMessageInput(data: Record<string, unknown>): { message: string } | undefined {
   const raw = data.message ?? data.msg ?? data.text ?? data.payload;
   if (raw === undefined || raw === null) return undefined;
   const message = typeof raw === 'string' ? raw.trim() : String(raw).trim();
@@ -132,7 +132,7 @@ export function resolveMcptMessage(data: Record<string, unknown>): { message: st
   return { message };
 }
 
-export const mcptSignMessageInputSchema = z
+export const tronSignMessageInputSchema = z
   .object({
     message: z.string().optional().describe('Nội dung cần ký (text hoặc hex tùy frontend/TronLink)'),
     msg: z.string().optional(),
@@ -141,7 +141,7 @@ export const mcptSignMessageInputSchema = z
   })
   .passthrough()
   .superRefine((data, ctx) => {
-    if (resolveMcptMessage(data as Record<string, unknown>)) return;
+    if (resolveSignMessageInput(data as Record<string, unknown>)) return;
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       message: 'Cần message không rỗng (message | msg | text | payload).',
@@ -170,7 +170,7 @@ export function resolveUnSignedTransaction(data: Record<string, unknown>): { tra
   return undefined;
 }
 
-export const mcptSignTransactionInputSchema = z
+export const tronSignTransactionInputSchema = z
   .object({
     unSignedTransaction: z
       .any()
@@ -194,21 +194,21 @@ export const mcptSignTransactionInputSchema = z
 
 // --- tron_getBalance / tron_getAccount: bắt buộc address — đọc TronGrid trên MCP, không delegate ---
 
-export function resolveMcptAddress(data: Record<string, unknown>): string | undefined {
+export function resolveAddressInput(data: Record<string, unknown>): string | undefined {
   const raw = data.address ?? data.addr;
   if (raw === undefined || raw === null) return undefined;
   const s = typeof raw === 'string' ? raw.trim() : String(raw).trim();
   return s || undefined;
 }
 
-export const mcptGetBalanceInputSchema = z
+export const tronGetBalanceInputSchema = z
   .object({
     address: z.string().optional().describe('Địa chỉ TRON base58 — bắt buộc'),
     addr: z.string().optional().describe('Alias của address'),
   })
   .passthrough()
   .superRefine((data, ctx) => {
-    if (resolveMcptAddress(data as Record<string, unknown>)) return;
+    if (resolveAddressInput(data as Record<string, unknown>)) return;
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       message:
@@ -216,14 +216,14 @@ export const mcptGetBalanceInputSchema = z
     });
   });
 
-export const mcptGetAccountInputSchema = z
+export const tronGetAccountInputSchema = z
   .object({
     address: z.string().optional().describe('Địa chỉ base58 — bắt buộc'),
     addr: z.string().optional(),
   })
   .passthrough()
   .superRefine((data, ctx) => {
-    if (resolveMcptAddress(data as Record<string, unknown>)) return;
+    if (resolveAddressInput(data as Record<string, unknown>)) return;
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       message:

@@ -1,9 +1,9 @@
-import type { McptWalletAction } from './mcptSchemas.js';
+import type { TronWalletAction } from './tronWalletSchemas.js';
 
 export const TRON_WEB_BROWSER_ONLY =
   'Chỉ thực hiện trên trang có TronLink (`window.tronWeb`). MCP không có ví — trả `clientWalletActions` cho frontend.';
 
-export function mcptJsonText(payload: Record<string, unknown>): { content: Array<{ type: 'text'; text: string }> } {
+export function toolJsonText(payload: Record<string, unknown>): { content: Array<{ type: 'text'; text: string }> } {
   return {
     content: [
       {
@@ -14,20 +14,20 @@ export function mcptJsonText(payload: Record<string, unknown>): { content: Array
   };
 }
 
-export function mcptError(message: string): {
+export function toolError(message: string): {
   content: Array<{ type: 'text'; text: string }>;
   isError: true;
 } {
   return {
-    ...mcptJsonText({ ok: false, error: message }),
+    ...toolJsonText({ ok: false, error: message }),
     isError: true,
   };
 }
 
 /** Chỉ cho tool cần ví: ký / gửi / đọc defaultAddress trên tab. */
-export function mcptDelegate(
+export function delegateBrowserWallet(
   tool: string,
-  actions: McptWalletAction[],
+  actions: TronWalletAction[],
   userMessage: string,
   forAgent?: string,
 ): Record<string, unknown> {
